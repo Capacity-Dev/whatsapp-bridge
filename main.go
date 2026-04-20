@@ -40,8 +40,8 @@ func main() {
 	base := "/api-" + apiPathSecret
 	mux := http.NewServeMux()
 
-	// Health (public)
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+	// Health (under secret path)
+	mux.HandleFunc("GET "+base+"/health", func(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, 200, map[string]any{"status": "ok", "whatsapp": bridge.State()})
 	})
 

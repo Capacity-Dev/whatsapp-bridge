@@ -195,7 +195,19 @@ func (b *Bridge) eventHandler(evt interface{}) {
 			return
 		}
 
+		// Prefer phone number (PN) over LID
 		phone := v.Info.Sender.User
+		senderServer := v.Info.Sender.Server
+		chatUser := v.Info.Chat.User
+		chatServer := v.Info.Chat.Server
+		log.Printf("[whatsapp] Message from sender=%s@%s chat=%s@%s pushName=%s", phone, senderServer, chatUser, chatServer, v.Info.PushName)
+
+		// Resolve LID to phone number using SenderAlt (PN JID)
+		if senderServer == "lid" {
+			if v.Info.MessageSource.SenderAlt.User != "" && v.Info.MessageSource.SenderAlt.Server != "lid" {
+				phone = v.Info.MessageSource.SenderAlt.User
+			}
+		}
 		name := v.Info.PushName
 		text := ""
 		msgType := "text"

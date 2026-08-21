@@ -15,8 +15,11 @@ import (
 	"whatsapp-bridge/wa"
 )
 
+var version = "dev"
+
 func main() {
 	loadEnv(".env")
+	log.Printf("WhatsApp Bridge %s", version)
 	apiPathSecret := os.Getenv("API_PATH_SECRET")
 	apiKey := os.Getenv("API_KEY")
 	qrSecret := os.Getenv("QR_ACCESS_SECRET")
@@ -102,12 +105,13 @@ func main() {
 		var body struct {
 			To      string `json:"to"`
 			Message string `json:"message"`
+			ReplyTo string `json:"replyTo"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.To == "" || body.Message == "" {
 			jsonResp(w, 400, map[string]any{"error": "to and message are required"})
 			return
 		}
-		id, err := bridge.SendText(body.To, body.Message)
+		id, err := bridge.SendText(body.To, body.Message, body.ReplyTo)
 		if err != nil {
 			jsonResp(w, 500, map[string]any{"error": err.Error()})
 			return

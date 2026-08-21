@@ -1,3 +1,7 @@
 wa_store.db
 .env
 whatsapp-bridge
+whatsapp-bridge-*
+*.exe
+dist/
+.DS_Store

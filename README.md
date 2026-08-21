@@ -1,6 +1,26 @@
 # WhatsApp Bridge
 
+![GitHub Release](https://img.shields.io/github/v/release/Capacity-Dev/whatsapp-bridge)
+![Go](https://img.shields.io/badge/go-1.25-blue)
+![License](https://img.shields.io/github/license/Capacity-Dev/whatsapp-bridge)
+
 A lightweight HTTP API bridge for WhatsApp built with Go and [whatsmeow](https://github.com/tulir/whatsmeow). Send text and media messages, receive incoming messages via webhooks, and manage device linking through a web-based QR/pairing code page.
+
+## Download
+
+Pre-built binaries for every release are on the [Releases page](https://github.com/Capacity-Dev/whatsapp-bridge/releases). Each release ships archives for all platforms and architectures plus a `checksums.txt` for integrity verification:
+
+| Platform | Architectures | Archive |
+|---|---|---|
+| Linux | x86-64, ARM64 | `whatsapp-bridge_<version>_linux_amd64.tar.gz`, `..._linux_arm64.tar.gz` |
+| macOS | Intel, Apple Silicon | `whatsapp-bridge_<version>_darwin_amd64.tar.gz`, `..._darwin_arm64.tar.gz` |
+| Windows | x86-64, ARM64 | `whatsapp-bridge_<version>_windows_amd64.zip`, `..._windows_arm64.zip` |
+
+Download the archive for your platform, extract it, and run `./whatsapp-bridge` (`whatsapp-bridge.exe` on Windows). Or build from source:
+
+```bash
+go build -o whatsapp-bridge .
+```
 
 ## Features
 
@@ -110,11 +130,18 @@ X-API-Key: <API_KEY>
 
 {
   "to": "1234567890",
-  "message": "Hello from the bridge!"
+  "message": "Hello from the bridge!",
+  "replyTo": "ABCDEF123456"
 }
 ```
 
-`to` is the recipient's phone number with country code, no `+` or spaces.
+`to` is the recipient's phone number with country code, no `+` or spaces. For group chats use the group JID (e.g. `120363418234909480@g.us`).
+
+| Field | Required | Description |
+|---|---|---|
+| `to` | Yes | Recipient phone number or JID |
+| `message` | Yes | Text to send |
+| `replyTo` | No | Message ID to reply to (quotes the original message) |
 
 Response:
 
@@ -154,7 +181,7 @@ Browser-friendly page that shows the QR code, pairing code, or connection status
 
 ## Webhook Events
 
-When `WEBHOOK_URL` is configured, incoming messages (non-group, non-self) are POSTed as JSON:
+When `WEBHOOK_URL` is configured, incoming messages (non-self, including group messages) are POSTed as JSON:
 
 ```json
 {
@@ -169,12 +196,20 @@ When `WEBHOOK_URL` is configured, incoming messages (non-group, non-self) are PO
     "text": "Hey there",
     "caption": "",
     "from": "1234567890",
-    "timestamp": 1745455512
+    "timestamp": 1745455512,
+    "mentionedJids": []
+  },
+  "group": {
+    "isGroup": false,
+    "id": "1234567890"
+  },
+  "bot": {
+    "jid": "123456789012345"
   }
 }
 ```
 
-Supported message types: `text`, `image`, `video`, `audio`, `document`.
+Supported message types: `text`, `image`, `video`, `audio`, `document`. For text messages with mentions, `mentionedJids` lists the mentioned JIDs. `group.id` is the chat JID (the group ID for group messages).
 
 If `WEBHOOK_SECRET` is set, it is included as the `X-Webhook-Secret` header on every webhook request.
 

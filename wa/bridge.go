@@ -21,17 +21,17 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	_ "modernc.org/sqlite"
 	"google.golang.org/protobuf/proto"
+	_ "modernc.org/sqlite"
 )
 
 type Bridge struct {
-	client      *whatsmeow.Client
-	mu          sync.RWMutex
-	state       string // disconnected, connecting, open
-	qrDataURL   string
-	pairingCode string
-	webhookURL  string
+	client        *whatsmeow.Client
+	mu            sync.RWMutex
+	state         string // disconnected, connecting, open
+	qrDataURL     string
+	pairingCode   string
+	webhookURL    string
 	webhookSecret string
 }
 
@@ -191,16 +191,14 @@ func (b *Bridge) eventHandler(evt interface{}) {
 		if v.Info.IsFromMe {
 			return
 		}
-		if v.Info.IsGroup {
-			return
-		}
 
 		// Prefer phone number (PN) over LID
 		phone := v.Info.Sender.User
 		senderServer := v.Info.Sender.Server
 		chatUser := v.Info.Chat.User
 		chatServer := v.Info.Chat.Server
-		log.Printf("[whatsapp] Message from sender=%s@%s chat=%s@%s pushName=%s", phone, senderServer, chatUser, chatServer, v.Info.PushName)
+		isGroup := v.Info.IsGroup
+		log.Printf("[whatsapp] Message from sender=%s@%s chat=%s@%s pushName=%s group=%v", phone, senderServer, chatUser, chatServer, v.Info.PushName, isGroup)
 
 		// Resolve LID to phone number using SenderAlt (PN JID)
 		if senderServer == "lid" {
@@ -212,11 +210,18 @@ func (b *Bridge) eventHandler(evt interface{}) {
 		text := ""
 		msgType := "text"
 		caption := ""
+		var mentionedJids []string
 
 		if v.Message.GetConversation() != "" {
 			text = v.Message.GetConversation()
 		} else if v.Message.GetExtendedTextMessage() != nil {
 			text = v.Message.GetExtendedTextMessage().GetText()
+			// Extract mentioned JIDs
+			if ci := v.Message.GetExtendedTextMessage().GetContextInfo(); ci != nil {
+				for _, jid := range ci.GetMentionedJID() {
+					mentionedJids = append(mentionedJids, jid)
+				}
+			}
 		} else if v.Message.GetImageMessage() != nil {
 			msgType = "image"
 			caption = v.Message.GetImageMessage().GetCaption()
@@ -237,6 +242,11 @@ func (b *Bridge) eventHandler(evt interface{}) {
 			text = fmt.Sprintf("[%s]", msgType)
 		}
 
+		botJID := ""
+		if b.client != nil && b.client.Store != nil && b.client.Store.ID != nil {
+			botJID = b.client.Store.ID.User
+		}
+
 		b.sendWebhook(map[string]any{
 			"event": "message.received",
 			"contact": map[string]any{
@@ -244,12 +254,20 @@ func (b *Bridge) eventHandler(evt interface{}) {
 				"name":        name,
 			},
 			"message": map[string]any{
-				"id":        v.Info.ID,
-				"type":      msgType,
-				"text":      text,
-				"caption":   caption,
-				"from":      phone,
-				"timestamp": v.Info.Timestamp.Unix(),
+				"id":            v.Info.ID,
+				"type":          msgType,
+				"text":          text,
+				"caption":       caption,
+				"from":          phone,
+				"timestamp":     v.Info.Timestamp.Unix(),
+				"mentionedJids": mentionedJids,
+			},
+			"group": map[string]any{
+				"isGroup": isGroup,
+				"id":      chatUser,
+			},
+			"bot": map[string]any{
+				"jid": botJID,
 			},
 		})
 	}
@@ -276,14 +294,25 @@ func (b *Bridge) sendWebhook(data map[string]any) {
 	resp.Body.Close()
 }
 
-func (b *Bridge) SendText(to, message string) (string, error) {
+func (b *Bridge) SendText(to, message string, replyTo string) (string, error) {
 	if b.client == nil || b.state != "open" {
 		return "", fmt.Errorf("not connected")
 	}
 	jid := toJID(to)
-	resp, err := b.client.SendMessage(context.Background(), jid, &waE2E.Message{
+	msg := &waE2E.Message{
 		Conversation: proto.String(message),
-	})
+	}
+	if replyTo != "" {
+		msg = &waE2E.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text: proto.String(message),
+				ContextInfo: &waE2E.ContextInfo{
+					StanzaID: proto.String(replyTo),
+				},
+			},
+		}
+	}
+	resp, err := b.client.SendMessage(context.Background(), jid, msg)
 	if err != nil {
 		return "", err
 	}
@@ -387,5 +416,9 @@ func toJID(phone string) types.JID {
 	phone = strings.ReplaceAll(phone, "+", "")
 	phone = strings.ReplaceAll(phone, " ", "")
 	phone = strings.ReplaceAll(phone, "-", "")
+	// Support full JID format (e.g. "120363418234909480@g.us")
+	if parts := strings.SplitN(phone, "@", 2); len(parts) == 2 {
+		return types.NewJID(parts[0], parts[1])
+	}
 	return types.NewJID(phone, types.DefaultUserServer)
 }
